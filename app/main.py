@@ -1,0 +1,142 @@
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi.responses import JSONResponse
+from ultralytics import YOLO
+import numpy as np
+from PIL import Image
+import io
+import logging
+import torch
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+ml_models = {}
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("Loading YOLO model...")
+
+    # Add safe globals for PyTorch 2.6+ compatibility
+    try:
+        from ultralytics.nn.tasks import DetectionModel
+        torch.serialization.add_safe_globals([DetectionModel])
+    except Exception as e:
+        logger.warning(f"Could not add safe globals: {e}")
+    
+    # Load the ML model
+    ml_models["yolov8n"] = YOLO('yolov8n.pt')
+    logger.info("Model loaded successfully!")
+    yield
+    # Clean up the ML models and release the resources
+    ml_models.clear()
+
+
+app = FastAPI(
+    title="YOLO Object Detection API",
+    description="FastAPI service for object detection using YOLO model",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+
+@app.get("/")
+async def root():
+    """Health check endpoint"""
+    return {
+        "message": "YOLO Object Detection API",
+        "status": "running",
+        "model": "YOLOv8n"
+    }
+
+
+@app.get("/health")
+async def health_check():
+    """Detailed health check"""
+    return {
+        "status": "healthy",
+        "model_loaded": "yolov8n" in ml_models
+    }
+
+
+@app.post("/predict")
+async def predict(file: UploadFile = File(...)):
+    """
+    Predict objects in uploaded image
+    
+    Args:
+        file: Image file (jpg, png, etc.)
+    
+    Returns:
+        JSON with detected objects and their bounding boxes
+    """
+    if "yolov8n" not in ml_models:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+    
+    model = ml_models["yolov8n"]
+    
+    try:
+        # Read image file
+        contents = await file.read()
+        image = Image.open(io.BytesIO(contents))
+        
+        # Convert RGBA to RGB if necessary
+        if image.mode == 'RGBA':
+            image = image.convert('RGB')
+        elif image.mode not in ('RGB', 'L'):
+            image = image.convert('RGB')
+        
+        # Convert PIL image to numpy array
+        img_array = np.array(image)
+        
+        # Run inference
+        logger.info(f"Running inference on image: {file.filename}")
+        results = model(img_array)
+        
+        # Parse results
+        detections = []
+        for result in results:
+            boxes = result.boxes
+            for box in boxes:
+                detection = {
+                    "class": result.names[int(box.cls[0])],
+                    "confidence": float(box.conf[0]),
+                    "bbox": {
+                        "x1": float(box.xyxy[0][0]),
+                        "y1": float(box.xyxy[0][1]),
+                        "x2": float(box.xyxy[0][2]),
+                        "y2": float(box.xyxy[0][3])
+                    }
+                }
+                detections.append(detection)
+        
+        logger.info(f"Found {len(detections)} objects")
+        
+        return JSONResponse(content={
+            "filename": file.filename,
+            "detections": detections,
+            "count": len(detections)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error during prediction: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
+
+@app.get("/model-info")
+async def model_info():
+    """Get model information"""
+    if "yolov8n" not in ml_models:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+    
+    model = ml_models["yolov8n"]
+    return {
+        "model_name": "YOLOv8n",
+        "classes": list(model.names.values()),
+        "num_classes": len(model.names)
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
