@@ -21,6 +21,10 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
+    - name: Set lowercase image name
+      run: |
+        echo "IMAGE_NAME_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+    
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
@@ -67,6 +71,11 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+    
+    - name: Set lowercase image name
+      run: |
+        echo "IMAGE_NAME_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+    
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
     
@@ -82,7 +91,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}
         tags: |
           type=ref,event=branch
           type=ref,event=pr
@@ -101,7 +110,7 @@ jobs:
     
     - name: Test Docker image
       run: |
-        docker run --rm -d -p 8000:8000 --name test-container ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-${{ github.sha }}
+        docker run --rm -d -p 8000:8000 --name test-container ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:${{ github.ref_name }}-${{ github.sha }}
         sleep 30
         curl -f http://localhost:8000/health || exit 1
         docker stop test-container
