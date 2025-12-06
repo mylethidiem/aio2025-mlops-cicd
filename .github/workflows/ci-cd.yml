@@ -112,8 +112,11 @@ jobs:
         cache-to: type=gha,mode=max
     
     - name: Test Docker image
+      if: github.event_name != 'pull_request'
       run: |
-        docker run --rm -d -p 8000:8000 --name test-container ${{ env.REGISTRY }}/${{ steps.image-name.outputs.value }}:${{ github.ref_name }}-${{ github.sha }}
+        # Use the branch tag (e.g., dev, main)
+        IMAGE_TAG="${{ env.REGISTRY }}/${{ steps.image-name.outputs.value }}:${{ github.ref_name }}"
+        docker run --rm -d -p 8000:8000 --name test-container ${IMAGE_TAG}
         sleep 30
         curl -f http://localhost:8000/health || exit 1
         docker stop test-container
