@@ -11,11 +11,11 @@ import logging
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any, Union
-
+from dotenv import load_dotenv
+load_dotenv()
 import torch
 import mlflow
 from ultralytics import YOLO
-from ultralytics.utils.callbacks import mlflow as mlflow_cb
 
 # Configure logging
 logging.basicConfig(
@@ -37,7 +37,7 @@ RUNS_DIR.mkdir(exist_ok=True)
 
 def train_yolo(
     data_yaml: str = "data/data.yaml",
-    model_name: str = "yolov8n",
+    model_name: str = "yolo11n",
     epochs: int = 100,
     imgsz: int = 640,
     batch_size: int = 16,
@@ -53,7 +53,7 @@ def train_yolo(
     
     Args:
         data_yaml: Path to data.yaml configuration file
-        model_name: YOLO model variant (yolov8n, yolov8s, yolov11n, yolov11s, etc.)
+        model_name: YOLO model variant (yolo11n, yolo11s, yolo11m, yolo11l, etc.)
         epochs: Number of training epochs
         imgsz: Input image size
         batch_size: Batch size for training
@@ -129,10 +129,6 @@ def train_yolo(
         model_path = MODELS_DIR / f"{model_name}.pt"
         model = YOLO(model_path)
 
-        # Attach Ultralytics' built-in MLflow callbacks for automatic logging
-        for event_name, callback in mlflow_cb.callbacks.items():
-            model.add_callback(event_name, callback)
-        
         # Train the model
         logger.info("Starting training...")
         results = model.train(
@@ -220,60 +216,31 @@ def validate_model(
     return metrics
 
 
-def _trigger_deployment_if_configured(
-    model_name: str,
-    model_version: int,
-    test_metrics: Dict[str, float]
-) -> None:
+def _upload_model_to_s3(model_path: str, s3_bucket: str, s3_key: str) -> None:
     """
-    Trigger deployment workflows if configured via environment variables.
+    Upload the trained model file to AWS S3.
     
     Args:
-        model_name: Name of the registered model
-        model_version: Version number of the model
-        test_metrics: Dictionary of test set metrics
+        model_path: Local path to the model file
+        s3_bucket: S3 bucket name
+        s3_key: S3 object key (path in bucket)
     """
+    import boto3
+    from botocore.exceptions import NoCredentialsError, ClientError
     
-    # Check if deployment trigger is configured
-    trigger_deployment = os.getenv("TRIGGER_DEPLOYMENT", "false").lower() == "true"
+    logger.info(f"Uploading model to S3: s3://{s3_bucket}/{s3_key}")
     
-    if not trigger_deployment:
-        logger.info("Deployment trigger not configured (set TRIGGER_DEPLOYMENT=true to enable)")
-        return
-    
-    logger.info("\n" + "=" * 50)
-    logger.info("Triggering Deployment")
-    logger.info("=" * 50)
+    s3_client = boto3.client('s3')
     
     try:
-        # Set environment variables for the trigger script
-        os.environ["MODEL_NAME"] = model_name
-        os.environ["MODEL_VERSION"] = str(model_version)
-        os.environ["TEST_PRECISION"] = str(test_metrics["precision"])
-        os.environ["TEST_RECALL"] = str(test_metrics["recall"])
-        os.environ["TEST_MAP50"] = str(test_metrics["mAP50"])
-        os.environ["TEST_MAP50_95"] = str(test_metrics["mAP50-95"])
-        
-        # Run the deployment trigger script
-        import subprocess
-        result = subprocess.run(
-            [sys.executable, str(PROJECT_ROOT / "trigger_deployment.py")],
-            capture_output=True,
-            text=True,
-            timeout=60
-        )
-        
-        if result.returncode == 0:
-            logger.info("✅ Deployment trigger successful")
-            if result.stdout:
-                logger.info(result.stdout)
-        else:
-            logger.warning(f"⚠️ Deployment trigger failed with code {result.returncode}")
-            if result.stderr:
-                logger.warning(result.stderr)
-                
-    except Exception as e:
-        logger.error(f"❌ Failed to trigger deployment: {e}")
+        s3_client.upload_file(model_path, s3_bucket, s3_key)
+        logger.info("Model uploaded to S3 successfully!")
+    except FileNotFoundError:
+        logger.error(f"The model file was not found: {model_path}")
+    except NoCredentialsError:
+        logger.error("AWS credentials not available.")
+    except ClientError as e:
+        logger.error(f"Failed to upload model to S3: {e}")
 
 
 def register_model_to_mlflow(
@@ -285,6 +252,7 @@ def register_model_to_mlflow(
 ) -> Dict[str, Any]:
     """
     Register the trained model to MLflow Model Registry with test metrics.
+    Finds the existing training run and updates it instead of creating a new one.
     
     Args:
         model_path: Path to the trained model file
@@ -294,7 +262,7 @@ def register_model_to_mlflow(
         experiment_name: MLflow experiment name
         
     Returns:
-        Registered model URI
+        Dictionary with model URI, promotion status, and version
     """
     logger.info("Registering model to MLflow...")
     
@@ -303,114 +271,94 @@ def register_model_to_mlflow(
     mlflow.set_tracking_uri(mlflow_uri)
     mlflow.set_experiment(experiment_name)
     
-    # Get MLflow client for model registry operations
     from mlflow.tracking import MlflowClient
     client = MlflowClient()
     
-    # Start a new MLflow run for model registration
-    with mlflow.start_run(run_name=f"{run_name}-registration") as run:
-        
-        # Log test metrics
-        mlflow.log_metrics({
-            "test_precision": test_metrics["precision"],
-            "test_recall": test_metrics["recall"],
-            "test_mAP50": test_metrics["mAP50"],
-            "test_mAP50-95": test_metrics["mAP50-95"],
-        })
-        
-        # Log model parameters
-        mlflow.log_param("model_path", model_path)
-        mlflow.log_param("model_name", model_name)
-        
-        # Log the model file as artifact
-        mlflow.log_artifact(model_path, artifact_path="model")
-        
-        # Get the run ID and artifact URI
-        run_id = run.info.run_id
-        artifact_uri = run.info.artifact_uri
+    # Find the existing training run by run_name
+    experiment = client.get_experiment_by_name(experiment_name)
+    run_id = None
     
-    # Ensure the registered model exists
-    try:
-        client.get_registered_model(model_name)
-        logger.info(f"Registered model '{model_name}' already exists.")
-    except mlflow.exceptions.MlflowException:
-        client.create_registered_model(model_name)
-        logger.info(f"Created new registered model '{model_name}'.")
+    if experiment:
+        runs = client.search_runs(
+            experiment_ids=[experiment.experiment_id],
+            filter_string=f"tags.mlflow.runName = '{run_name}'",
+            max_results=1,
+            order_by=["start_time DESC"]
+        )
+        if runs:
+            run_id = runs[0].info.run_id
+            logger.info(f"Found existing training run: {run_id}")
     
-    # Create a new model version using the artifact URI
-    # The source should point to the artifact directory containing the model
+    # Update existing run or create new one if not found
+    if run_id:
+        # Update existing run with test metrics and model artifact
+        client.log_metric(run_id, "test_precision", test_metrics["precision"])
+        client.log_metric(run_id, "test_recall", test_metrics["recall"])
+        client.log_metric(run_id, "test_mAP50", test_metrics["mAP50"])
+        client.log_metric(run_id, "test_mAP50-95", test_metrics["mAP50-95"])
+        client.log_artifact(run_id, model_path, artifact_path="model")
+    else:
+        # Fallback: create a new run if training run not found
+        logger.warning(f"Training run '{run_name}' not found, creating new run")
+        with mlflow.start_run(run_name=run_name) as run:
+            mlflow.log_metrics({
+                "test_precision": test_metrics["precision"],
+                "test_recall": test_metrics["recall"],
+                "test_mAP50": test_metrics["mAP50"],
+                "test_mAP50-95": test_metrics["mAP50-95"],
+            })
+            mlflow.log_artifact(model_path, artifact_path="model")
+            run_id = run.info.run_id
+    
+    # Register the model
     model_filename = os.path.basename(model_path)
-    source_uri = f"{artifact_uri}/model/{model_filename}"
+    artifact_uri = f"runs:/{run_id}/model/{model_filename}"
     
-    registered_model = client.create_model_version(
+    try:
+        client.create_registered_model(model_name)
+    except Exception:
+        pass  # Model already exists
+    
+    result = client.create_model_version(
         name=model_name,
-        source=source_uri,
-        run_id=run_id,
-        description=f"YOLO model with test mAP@50-95: {test_metrics['mAP50-95']:.4f}"
+        source=artifact_uri,
+        run_id=run_id
     )
     
-    logger.info(f"Model registered successfully!")
-    logger.info(f"  Model Name: {registered_model.name}")
-    logger.info(f"  Model Version: {registered_model.version}")
-    logger.info(f"  Run ID: {run_id}")
-    logger.info(f"  Source URI: {source_uri}")
+    logger.info(f"Model registered: {model_name} v{result.version}")
     
-    # Check if this is the best model based on test mAP50-95
+    # Check if should promote to production (compare with previous best)
     current_map = test_metrics["mAP50-95"]
     should_promote = True
     
-    # Get all versions of this model
     try:
-        all_versions = client.search_model_versions(f"name='{model_name}'")
-        
-        if len(all_versions) > 1:  # More than just the current version
-            logger.info("Comparing with previous model versions...")
-            best_previous_map = 0.0
-            
-            for version in all_versions:
-                if version.version != str(registered_model.version):
-                    # Get the run associated with this version
-                    try:
-                        version_run = client.get_run(version.run_id)
-                        version_map = version_run.data.metrics.get("test_mAP50-95", 0.0)
-                        if version_map > best_previous_map:
-                            best_previous_map = version_map
-                    except Exception as e:
-                        logger.warning(f"Could not retrieve metrics for version {version.version}: {e}")
-            
-            if current_map <= best_previous_map:
+        # Get production model's metrics if exists
+        prod_version = client.get_model_version_by_alias(model_name, "production")
+        if prod_version and prod_version.version != result.version:
+            prod_run = client.get_run(prod_version.run_id)
+            prod_map = prod_run.data.metrics.get("test_mAP50-95", 0.0)
+            if prod_map >= current_map:
                 should_promote = False
-                logger.info(f"Current mAP@50-95: {current_map:.4f} <= Best previous: {best_previous_map:.4f}")
-                logger.info("This model will NOT be promoted to 'production'")
-            else:
-                logger.info(f"Current mAP@50-95: {current_map:.4f} > Best previous: {best_previous_map:.4f}")
-                logger.info("This model will be promoted to 'production'")
-    except Exception as e:
-        logger.warning(f"Could not compare with previous versions: {e}")
-        logger.info("Promoting this model to 'production' by default")
+                logger.info(f"Production model has better mAP: {prod_map:.4f} >= {current_map:.4f}")
+    except Exception:
+        pass  # No production model exists yet
     
-    # Set "production" alias if this is the best model
+    # Set production alias if best model
     if should_promote:
-        client.set_registered_model_alias(
-            name=model_name,
-            alias="production",
-            version=registered_model.version
-        )
-        logger.info(f"✓ Model version {registered_model.version} set as 'production' alias")
-        
-        # Trigger deployment if configured
-        _trigger_deployment_if_configured(
-            model_name=model_name,
-            model_version=registered_model.version,
-            test_metrics=test_metrics
+        client.set_registered_model_alias(model_name, "production", result.version)
+        logger.info(f"✓ Model v{result.version} set as 'production'")
+        _upload_model_to_s3(
+            model_path=model_path,
+            s3_bucket=os.getenv("S3_BUCKET"),
+            s3_key=f"{model_name}/best.pt"
         )
     else:
-        logger.info(f"Model version {registered_model.version} registered but not promoted")
+        logger.info(f"Model v{result.version} registered but not promoted")
     
     return {
-        "model_uri": f"models:/{model_name}/{registered_model.version}",
+        "model_uri": f"models:/{model_name}/{result.version}",
         "promoted": should_promote,
-        "version": registered_model.version
+        "version": result.version
     }
 
 
