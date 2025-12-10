@@ -5,7 +5,7 @@ A complete FastAPI backend service for object detection using YOLO model, with f
 ## 🚀 Features
 
 - **FastAPI Backend**: High-performance REST API for object detection
-- **YOLO Model**: YOLOv8n for real-time object detection
+- **YOLO Model**: YOLO11n for real-time object detection
 - **Docker Support**: Fully containerized application
 - **CI/CD Pipeline**: Complete GitHub Actions workflow
 - **Automated Testing**: Unit tests with pytest
@@ -204,3 +204,30 @@ The application includes:
 - Docker health checks
 - Logging for all requests
 - Error tracking
+
+## 📊 MLflow Tracking
+
+Start MLflow UI server with SQLite backend:
+
+```bash
+mlflow server \
+  --backend-store-uri sqlite:///mlruns/mlflow.db \
+  --default-artifact-root ./mlruns/artifacts \
+  --host 0.0.0.0 \
+  --port 5001 \
+  --allowed-hosts '*' \
+  --cors-allowed-origins '*'
+```
+
+Access MLflow UI at: http://localhost:5001
+
+**Note**: The project now uses SQLite database backend instead of filesystem tracking for better features and future compatibility.
+
+# Train first model
+python train.py --model yolo11n --epochs 10
+
+# Train another model (only promoted if better)
+python train.py --model yolo11n --epochs 20
+
+# Try different model size
+python train.py --model yolo11s --epochs 10
