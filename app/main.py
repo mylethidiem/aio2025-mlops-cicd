@@ -46,7 +46,7 @@ async def root():
     return {
         "message": "YOLO Object Detection API",
         "status": "running",
-        "model": "YOLOv8n"
+        "model": "YOLO11n"
     }
 
 
@@ -131,7 +131,7 @@ async def model_info():
     
     model = ml_models["yolo11n"]
     return {
-        "model_name": "YOLOv8n",
+        "model_name": "YOLO11n",
         "classes": list(model.names.values()),
         "num_classes": len(model.names)
     }
