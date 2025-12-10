@@ -16,6 +16,7 @@ htmlcov/
 .DS_Store
 *.log
 .env
+.env.dvc
 .vscode/
 .idea/
 *.weights
@@ -24,3 +25,19 @@ runs/
 mlruns/
 *.db
 *.cache
+
+# DVC
+/data/train/images/
+/data/train/labels/*.txt
+!/data/train/labels/classes.txt
+/data/valid/images/
+/data/valid/labels/*.txt
+!/data/valid/labels/classes.txt
+/data/test/images/
+/data/test/labels/*.txt
+!/data/test/labels/classes.txt
+*.dvc.lock
+
+classes.txt
+README.*.txt
+README.*.txt

@@ -1,0 +1,10 @@
+[core]
+    remote = local
+    autostage = true
+
+[remote "local"]
+    url = /tmp/dvc-storage
+# Uncomment and configure for S3 remote storage
+# [remote "s3"]
+#     url = s3://your-bucket-name/dvc-storage
+#     region = your-region

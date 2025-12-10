@@ -1,0 +1,2 @@
+# DVC will track these files
+# Ignore raw data files, DVC will handle versioning
