@@ -11,7 +11,7 @@ client = TestClient(app)
 @pytest.fixture(scope="module", autouse=True)
 def load_model():
     """Load model before running tests"""
-    ml_models["yolov8n"] = YOLO('yolov8n.pt')
+    ml_models["yolo11n"] = YOLO('yolo11n.pt')
     yield
     ml_models.clear()
 
