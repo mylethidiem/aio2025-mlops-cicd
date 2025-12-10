@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
@@ -7,10 +8,20 @@ from PIL import Image
 import io
 import logging
 import torch
+from dotenv import load_dotenv
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _download_model_from_s3(s3_bucket: str, s3_key: str, local_path: str):
+    import boto3
+    s3 = boto3.client('s3')
+    s3.download_file(s3_bucket, s3_key, local_path)
+    logger.info(f"Model downloaded from s3://{s3_bucket}/{s3_key} to {local_path}")
+
 
 ml_models = {}
 @asynccontextmanager
@@ -25,7 +36,12 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Could not add safe globals: {e}")
     
     # Load the ML model
-    ml_models["yolo11n"] = YOLO('yolo11n.pt')
+    # ml_models["yolo11n"] = YOLO('yolo11n.pt')
+    local_model_path = "yolo11n.pt"
+    _download_model_from_s3(s3_bucket=os.getenv("S3_BUCKET"),
+                            s3_key="yolo11n-detection/best.pt",
+                            local_path=local_model_path)
+    ml_models["yolo11n"] = YOLO(local_model_path)
     logger.info("Model loaded successfully!")
     yield
     # Clean up the ML models and release the resources
