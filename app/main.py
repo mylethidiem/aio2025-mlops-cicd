@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Could not add safe globals: {e}")
     
     # Load the ML model
-    ml_models["yolov8n"] = YOLO('yolov8n.pt')
+    ml_models["yolo11n"] = YOLO('yolo11n.pt')
     logger.info("Model loaded successfully!")
     yield
     # Clean up the ML models and release the resources
@@ -55,7 +55,7 @@ async def health_check():
     """Detailed health check"""
     return {
         "status": "healthy",
-        "model_loaded": "yolov8n" in ml_models
+        "model_loaded": "yolo11n" in ml_models
     }
 
 
@@ -70,10 +70,10 @@ async def predict(file: UploadFile = File(...)):
     Returns:
         JSON with detected objects and their bounding boxes
     """
-    if "yolov8n" not in ml_models:
+    if "yolo11n" not in ml_models:
         raise HTTPException(status_code=503, detail="Model not loaded")
     
-    model = ml_models["yolov8n"]
+    model = ml_models["yolo11n"]
     
     try:
         # Read image file
@@ -126,10 +126,10 @@ async def predict(file: UploadFile = File(...)):
 @app.get("/model-info")
 async def model_info():
     """Get model information"""
-    if "yolov8n" not in ml_models:
+    if "yolo11n" not in ml_models:
         raise HTTPException(status_code=503, detail="Model not loaded")
     
-    model = ml_models["yolov8n"]
+    model = ml_models["yolo11n"]
     return {
         "model_name": "YOLOv8n",
         "classes": list(model.names.values()),
