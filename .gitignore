@@ -21,3 +21,5 @@ htmlcov/
 *.weights
 *.pt
 runs/
+mlruns/
+*.db
