@@ -15,3 +15,10 @@ services:
       - ./run_env/data:/mlflow
     extra_hosts:
       - "localhost:0.0.0.0"
+    restart: unless-stopped
+    networks:
+      - aivn-network
+
+networks:
+  aivn-network:
+    external: true
