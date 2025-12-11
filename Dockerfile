@@ -19,9 +19,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY app/ ./app/
 
-# Download YOLO model during build
-RUN python -c "from ultralytics import YOLO; YOLO('yolo11n.pt')"
-
 # Expose port
 EXPOSE 8000
 
