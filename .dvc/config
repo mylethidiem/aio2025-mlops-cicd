@@ -1,10 +1,7 @@
 [core]
-    remote = local
-    autostage = true
+    remote = s3
 
-[remote "local"]
-    url = /tmp/dvc-storage
-# Uncomment and configure for S3 remote storage
-# [remote "s3"]
-#     url = s3://your-bucket-name/dvc-storage
-#     region = your-region
+['remote "s3"']
+    url = s3://aio-s3-cicd-demo/dvc-storage
+    region = us-east-1        # your AWS region
+    profile = default         # optional: AWS CLI profile
