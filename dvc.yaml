@@ -7,7 +7,6 @@ stages:
       ${train.batch_size}
     deps:
     - train.py
-    - data/.data_version
     - data/data.yaml
     - checkpoints/${train.model}.pt
     params:
