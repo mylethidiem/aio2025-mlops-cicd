@@ -41,3 +41,4 @@ mlruns/
 classes.txt
 README.*.txt
 README.*.txt
+/data
