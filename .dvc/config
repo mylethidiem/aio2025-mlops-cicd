@@ -4,4 +4,3 @@
 ['remote "s3"']
     url = s3://aio-s3-cicd-demo/dvc-storage
     region = us-east-1        # your AWS region
-    profile = default         # optional: AWS CLI profile

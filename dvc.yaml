@@ -15,10 +15,7 @@ stages:
     - train.model
     - train.batch_size
     - train.imgsz
-    outs:
-    - runs/detect/train/weights/best.pt:
-        cache: true
-        persist: true
+    outs: []
     plots:
     - runs/detect/train/results.csv:
         cache: false
