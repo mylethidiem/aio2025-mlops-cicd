@@ -70,17 +70,17 @@ pipeline {
         stage('Check Data Changes') {
             steps {
                 script {
+                    // Check if data.dvc was modified in the last commit
                     def dataChanged = sh(
                         script: '''
-                            eval "$(conda shell.bash hook)"
-                            conda activate ${CONDA_ENV}
-                            dvc status 2>/dev/null | grep -q "changed" && echo "true" || echo "false"
+                            # Check if data.dvc changed in the latest commit
+                            git diff HEAD~1 HEAD --name-only | grep -q "data.dvc" && echo "true" || echo "false"
                         ''',
                         returnStdout: true
                     ).trim()
                     
                     env.DATA_CHANGED = dataChanged
-                    echo "Data changed: ${dataChanged}"
+                    echo "Data changed in last commit: ${dataChanged}"
                 }
             }
         }

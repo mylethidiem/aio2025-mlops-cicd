@@ -37,6 +37,10 @@ jobs:
           echo "=== Pull latest code ==="
           git pull
           
+          echo "=== Check if data.dvc changed ==="
+          DATA_CHANGED=$(git diff HEAD~1 HEAD --name-only | grep -q "data.dvc" && echo "true" || echo "false")
+          echo "Data changed: $DATA_CHANGED"
+          
           echo "=== Initialize Conda ==="
           source ~/miniconda3/bin/activate
           conda activate mlops-cicd
@@ -45,7 +49,13 @@ jobs:
           dvc pull
           
           echo "=== Run DVC pipeline ==="
-          dvc repro
+          if [ "$DATA_CHANGED" = "true" ]; then
+            echo "Data changed detected - forcing training"
+            dvc repro --force
+          else
+            echo "No data changes - running regular pipeline"
+            dvc repro
+          fi
           
           echo "=== Push artifacts back to DVC remote ==="
           dvc push
