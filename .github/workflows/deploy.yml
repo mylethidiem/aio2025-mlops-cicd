@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - "data/**"   # data changed
+      - "data.dvc" # DVC tracking file changed
+
   workflow_dispatch:
 
 env:
