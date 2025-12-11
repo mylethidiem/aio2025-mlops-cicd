@@ -27,14 +27,22 @@ jobs:
         key: ${{ secrets.TRAINING_SERVER_KEY }}
         port: ${{ secrets.TRAINING_SERVER_PORT }}
         script: |
-          echo "=== Pull latest DVC data ==="
+          echo "=== Setting up environment ==="
           cd /home/thuannd/Repository/aio2025-mlops-cicd
+          
+          echo "=== Pull latest code ==="
           git pull
-          source ~/venv/bin/activate
+          
+          echo "=== Initialize Conda ==="
+          source ~/miniconda3/bin/activate
           conda activate mlops-cicd
+          
+          echo "=== Pull latest DVC data ==="
           dvc pull
+          
           echo "=== Run DVC pipeline ==="
           dvc repro
+          
           echo "=== Push artifacts back to DVC remote ==="
           dvc push
 
