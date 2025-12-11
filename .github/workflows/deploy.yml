@@ -30,6 +30,8 @@ jobs:
           echo "=== Pull latest DVC data ==="
           cd /home/thuannd/Repository/aio2025-mlops-cicd
           git pull
+          source ~/venv/bin/activate
+          conda activate mlops-cicd
           dvc pull
           echo "=== Run DVC pipeline ==="
           dvc repro
