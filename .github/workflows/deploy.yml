@@ -28,7 +28,7 @@ jobs:
         port: ${{ secrets.TRAINING_SERVER_PORT }}
         script: |
           echo "=== Pull latest DVC data ==="
-          cd /home/ubuntu/your_project
+          cd /home/thuannd/Repository/aio2025-mlops-cicd
           git pull
           dvc pull
           echo "=== Run DVC pipeline ==="
