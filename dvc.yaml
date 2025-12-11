@@ -16,7 +16,4 @@ stages:
     - train.batch_size
     - train.imgsz
     outs: []
-    plots:
-    - runs/detect/train/results.csv:
-        cache: false
-        x: epoch
+    plots: []
