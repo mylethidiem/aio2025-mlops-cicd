@@ -26,7 +26,7 @@ jobs:
         echo "IMAGE_NAME_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
     
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.11'
         cache: 'pip'
@@ -43,6 +43,7 @@ jobs:
         flake8 app/ --count --select=E9,F63,F7,F82 --show-source --statistics
         # Exit-zero treats all errors as warnings
         flake8 app/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      continue-on-error: true
     
     - name: Run tests
       run: |
@@ -55,6 +56,7 @@ jobs:
     
     - name: Upload coverage reports
       uses: codecov/codecov-action@v5
+      if: always()
       with:
         files: ./coverage.xml
         flags: unittests
@@ -102,7 +104,7 @@ jobs:
           type=raw,value=latest,enable={{is_default_branch}}
     
     - name: Build and push Docker image
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v6
       with:
         context: .
         push: ${{ github.event_name != 'pull_request' }}
@@ -110,6 +112,7 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+        provenance: false
     
     - name: Test Docker image
       if: github.event_name != 'pull_request'

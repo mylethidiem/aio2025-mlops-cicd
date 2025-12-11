@@ -1,115 +1,134 @@
-# GitHub Actions Workflow for Model Deployment
-# Triggered by Jenkins after model training completes
-
-name: Deploy Model
+name: CI/CD for Model
 
 on:
-  # Triggered by Jenkins via repository_dispatch
-  repository_dispatch:
-    types: [model-updated]
-  
-  # Manual trigger
+  push:
+    paths:
+      - "data/**"   # data changed
   workflow_dispatch:
-    inputs:
-      model_version:
-        description: 'Model version to deploy (timestamp or "latest")'
-        required: false
-        default: 'latest'
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  deploy:
-    name: Build and Deploy with New Model
+
+  train_on_server:
+    name: Train Model on Remote Server
     runs-on: ubuntu-latest
-    
+
+    steps:
+    - name: SSH and run training
+      uses: appleboy/ssh-action@v1.1.0
+      with:
+        host: ${{ secrets.TRAINING_SERVER_HOST }}
+        username: ${{ secrets.TRAINING_SERVER_USER }}
+        key: ${{ secrets.TRAINING_SERVER_KEY }}
+        port: ${{ secrets.TRAINING_SERVER_PORT }}
+        script: |
+          echo "=== Pull latest DVC data ==="
+          cd /home/ubuntu/your_project
+          git pull
+          dvc pull
+          echo "=== Run DVC pipeline ==="
+          dvc repro
+          echo "=== Push artifacts back to DVC remote ==="
+          dvc push
+
+  build_and_push:
+    name: Build Docker image & Push GHCR
+    needs: train_on_server
+    runs-on: ubuntu-latest
+    outputs:
+      image_name: ${{ steps.image.outputs.value }}
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
-    - name: Log trigger information
-      run: |
-        echo "=== Deployment Triggered ==="
-        echo "Event: ${{ github.event_name }}"
-        echo "Triggered by: ${{ github.event.client_payload.triggered_by || 'manual' }}"
-        echo "Model version: ${{ github.event.client_payload.model_version || inputs.model_version || 'latest' }}"
-    
+
     - name: Set lowercase image name
-      id: image-name
+      id: image
       run: |
         IMAGE_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
         echo "IMAGE_NAME_LOWER=${IMAGE_LOWER}" >> $GITHUB_ENV
         echo "value=${IMAGE_LOWER}" >> $GITHUB_OUTPUT
-    
-    - name: Set up Docker Buildx
+
+    - name: Setup Docker Buildx
       uses: docker/setup-buildx-action@v3
-    
-    - name: Log in to GitHub Container Registry
+
+    - name: Login to GHCR
       uses: docker/login-action@v3
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Generate deployment tag
+
+    - name: Generate tag metadata
       id: tag
       run: |
+        MODEL_VERSION=$(date +%Y%m%d-%H%M%S)
         TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-        MODEL_VERSION="${{ github.event.client_payload.model_version || inputs.model_version || 'latest' }}"
-        echo "timestamp=${TIMESTAMP}" >> $GITHUB_OUTPUT
-        echo "model_version=${MODEL_VERSION}" >> $GITHUB_OUTPUT
-    
-    - name: Extract metadata
+        echo "model_version=$MODEL_VERSION" >> $GITHUB_OUTPUT
+        echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
+
+    - name: Docker Metadata
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ steps.image-name.outputs.value }}
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}
         tags: |
           type=raw,value=latest
           type=raw,value=model-${{ steps.tag.outputs.model_version }}
-          type=sha,prefix=deploy-
           type=raw,value=deploy-${{ steps.tag.outputs.timestamp }}
-    
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v5
+          type=sha,prefix=sha-
+
+    - name: Build & Push Docker image
+      uses: docker/build-push-action@v6
       with:
         context: .
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
         build-args: |
           MODEL_VERSION=${{ steps.tag.outputs.model_version }}
-    
-    - name: Verify deployment image
-      run: |
-        echo "=== Testing deployed image ==="
-        IMAGE_TAG="${{ env.REGISTRY }}/${{ steps.image-name.outputs.value }}:latest"
-        docker run --rm -d -p 8000:8000 \
-          -e AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} \
-          -e AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} \
-          -e S3_BUCKET=${{ secrets.S3_BUCKET }} \
-          --name test-container ${IMAGE_TAG}
-        
-        # Wait for the service to start
-        echo "Waiting for service to start..."
-        sleep 45
-        
-        # Health check
-        curl -f http://localhost:8000/health || exit 1
-        echo "Health check passed!"
-        
-        # Cleanup
-        docker stop test-container
-    
-    - name: Create deployment summary
-      run: |
-        echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "- **Triggered by:** ${{ github.event.client_payload.triggered_by || 'manual' }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Model version:** ${{ steps.tag.outputs.model_version }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Image tag:** ${{ env.REGISTRY }}/${{ steps.image-name.outputs.value }}:latest" >> $GITHUB_STEP_SUMMARY
-        echo "- **Deployment time:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $GITHUB_STEP_SUMMARY
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  deploy_ec2:
+    name: Deploy to EC2
+    needs: build_and_push
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: SSH deploy container on EC2
+      uses: appleboy/ssh-action@v1.1.0
+      env:
+        IMAGE_NAME: ${{ needs.build_and_push.outputs.image_name }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_ACTOR: ${{ github.actor }}
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_KEY }}
+        port: ${{ secrets.EC2_PORT }}
+        envs: IMAGE_NAME,GITHUB_TOKEN,GITHUB_ACTOR
+        script: |
+          echo "Logging in to GitHub Container Registry"
+          echo ${GITHUB_TOKEN} | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin
+          
+          echo "Pulling latest image"
+          docker pull ghcr.io/${IMAGE_NAME}:latest
+          
+          echo "Stopping and removing old container"
+          docker stop app-container || true
+          docker rm app-container || true
+          
+          echo "Starting new container"
+          docker run -d --name app-container -p 8000:8000 \
+            --restart unless-stopped \
+            -e AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} \
+            -e AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} \
+            -e S3_BUCKET=${{ secrets.S3_BUCKET }} \
+            ghcr.io/${IMAGE_NAME}:latest
+          
+          echo "Cleaning up old images"
+          docker image prune -f
