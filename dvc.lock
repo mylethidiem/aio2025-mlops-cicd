@@ -1,0 +1,23 @@
+schema: '2.0'
+stages:
+  train:
+    cmd: python train.py --epochs 5 --model yolo11n --batch 16
+    deps:
+    - path: checkpoints/yolo11n.pt
+      hash: md5
+      md5: 261474e91b15f5ef14a63c21ce6c0cbb
+      size: 5613764
+    - path: data/data.yaml
+      hash: md5
+      md5: e013f0426685b60c14214c207847739d
+      size: 317
+    - path: train.py
+      hash: md5
+      md5: 2fc43b71622f2975b58ca7a95e182cfd
+      size: 16629
+    params:
+      params.yaml:
+        train.batch_size: 16
+        train.epochs: 5
+        train.imgsz: 640
+        train.model: yolo11n

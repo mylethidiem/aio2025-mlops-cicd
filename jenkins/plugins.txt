@@ -1,0 +1,30 @@
+# Jenkins plugins required for the DVC/MLOps pipeline
+# Install these plugins in Jenkins:
+# Manage Jenkins → Plugin Manager → Available plugins
+
+# Core plugins
+git
+pipeline
+workflow-aggregator
+pipeline-stage-view
+
+# Webhook trigger
+generic-webhook-trigger
+
+# Credentials management
+credentials
+credentials-binding
+plain-credentials
+
+# Docker support (optional, for building in Jenkins)
+docker-workflow
+docker-plugin
+
+# SCM
+github
+github-branch-source
+
+# Utility
+timestamper
+ws-cleanup
+build-timeout
