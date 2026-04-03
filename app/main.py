@@ -38,9 +38,10 @@ async def lifespan(app: FastAPI):
     # Load the ML model
     # ml_models["yolo11n"] = YOLO('yolo11n.pt')
     local_model_path = "yolo11n.pt"
-    _download_model_from_s3(s3_bucket=os.getenv("S3_BUCKET"),
-                            s3_key="yolo11n-detection/best.pt",
-                            local_path=local_model_path)
+    # _download_model_from_s3(s3_bucket=os.getenv("S3_BUCKET"),
+    #                        s3_key="yolo11n-detection/best.pt",
+    #                        local_path=local_model_path)
+    app.state.model = YOLO(local_model_path)
     ml_models["yolo11n"] = YOLO(local_model_path)
     logger.info("Model loaded successfully!")
     yield

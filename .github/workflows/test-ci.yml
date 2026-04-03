@@ -2,9 +2,9 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [ test-ci ]
+    branches: [ main ]
   pull_request:
-    branches: [ test-ci ]
+    branches: [ main ]
 
 env:
   REGISTRY: ghcr.io
